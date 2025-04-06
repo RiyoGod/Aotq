@@ -1,71 +1,60 @@
-import asyncio
-import shlex
-from typing import Tuple
-
-from git import Repo
-from git.exc import GitCommandError, InvalidGitRepositoryError
-
-import config
-
-from ..logging import LOGGER
+import asyncio, os, time, aiohttp
+import aiohttp
+from pyrogram import filters
+from ANNIEMUSIC import app
+from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 
-def install_req(cmd: str) -> Tuple[str, str, int, int]:
-    async def install_requirements():
-        args = shlex.split(cmd)
-        process = await asyncio.create_subprocess_exec(
-            *args,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, stderr = await process.communicate()
-        return (
-            stdout.decode("utf-8", "replace").strip(),
-            stderr.decode("utf-8", "replace").strip(),
-            process.returncode,
-            process.pid,
-        )
 
-    return asyncio.get_event_loop().run_until_complete(install_requirements())
+@app.on_message(filters.command(["github", "git"]))
+async def github(_, message):
+    if len(message.command) != 2:
+        await message.reply_text("/git CertifiedCoders")
+        return
 
+    username = message.text.split(None, 1)[1]
+    URL = f'https://api.github.com/users/{username}'
 
-def git():
-    REPO_LINK = config.UPSTREAM_REPO
-    if config.GIT_TOKEN:
-        GIT_USERNAME = REPO_LINK.split("com/")[1].split("/")[0]
-        TEMP_REPO = REPO_LINK.split("https://")[1]
-        UPSTREAM_REPO = f"https://{GIT_USERNAME}:{config.GIT_TOKEN}@{TEMP_REPO}"
-    else:
-        UPSTREAM_REPO = config.UPSTREAM_REPO
-    try:
-        repo = Repo()
-        LOGGER(__name__).info(f"Git Client Found [VPS DEPLOYER]")
-    except GitCommandError:
-        LOGGER(__name__).info(f"Invalid Git Command")
-    except InvalidGitRepositoryError:
-        repo = Repo.init()
-        if "origin" in repo.remotes:
-            origin = repo.remote("origin")
-        else:
-            origin = repo.create_remote("origin", UPSTREAM_REPO)
-        origin.fetch()
-        repo.create_head(
-            config.UPSTREAM_BRANCH,
-            origin.refs[config.UPSTREAM_BRANCH],
-        )
-        repo.heads[config.UPSTREAM_BRANCH].set_tracking_branch(
-            origin.refs[config.UPSTREAM_BRANCH]
-        )
-        repo.heads[config.UPSTREAM_BRANCH].checkout(True)
-        try:
-            repo.create_remote("origin", config.UPSTREAM_REPO)
-        except BaseException:
-            pass
-        nrs = repo.remote("origin")
-        nrs.fetch(config.UPSTREAM_BRANCH)
-        try:
-            nrs.pull(config.UPSTREAM_BRANCH)
-        except GitCommandError:
-            repo.git.reset("--hard", "FETCH_HEAD")
-        install_req("pip3 install --no-cache-dir -r requirements.txt")
-        LOGGER(__name__).info(f"Fetching updates from upstream repository...")
+    async with aiohttp.ClientSession() as session:
+        async with session.get(URL) as request:
+            if request.status == 404:
+                return await message.reply_text("404")
+
+            result = await request.json()
+
+            try:
+                url = result['html_url']
+                name = result['name']
+                company = result['company']
+                bio = result['bio']
+                created_at = result['created_at']
+                avatar_url = result['avatar_url']
+                blog = result['blog']
+                location = result['location']
+                repositories = result['public_repos']
+                followers = result['followers']
+                following = result['following']
+
+                caption = f"""ɢɪᴛʜᴜʙ ɪɴғᴏ ᴏғ {name}
+                
+ᴜsᴇʀɴᴀᴍᴇ: {username}
+ʙɪᴏ: {bio}
+ʟɪɴᴋ: [Here]({url})
+ᴄᴏᴍᴩᴀɴʏ: {company}
+ᴄʀᴇᴀᴛᴇᴅ ᴏɴ: {created_at}
+ʀᴇᴩᴏsɪᴛᴏʀɪᴇs: {repositories}
+ʙʟᴏɢ: {blog}
+ʟᴏᴄᴀᴛɪᴏɴ: {location}
+ғᴏʟʟᴏᴡᴇʀs: {followers}
+ғᴏʟʟᴏᴡɪɴɢ: {following}"""
+
+            except Exception as e:
+                print(str(e))
+                pass
+
+    # Create an inline keyboard with a close button
+    close_button = InlineKeyboardButton("Close", callback_data="close")
+    inline_keyboard = InlineKeyboardMarkup([[close_button]])
+
+    # Send the message with the inline keyboard
+    await message.reply_photo(photo=avatar_url, caption=caption, reply_markup=inline_keyboard)
